@@ -6,82 +6,21 @@ namespace :parser do
     require 'date'
     require 'json'
 
-    def sale
-      @cat_sale = Category.first
-      cat_url_en = @cat_sale.url + '?___store=en'
-
+    # Метод для перехода по страницам товара и кнопкам пагинации
+    def pars_products(category_url, product_dom, category_id, category_name)
       agent = Mechanize.new
-
-      page = agent.get(cat_url_en)
-
-      page.css('.twoban a').each do |link|
-        full_link = 'https://www.tvdirect.tv' + link['href'].to_s
-        sale_page = agent.get(full_link)
-
-        page_number = 1
-
-        loop do
-          page_number += 1
-          lien = sale_page.link_with(:text => page_number.to_s)
-
-          sale_page.css('.products-grid .product-name a').each do |product_link|
-
-            @product = Product.new
-            @product.url = product_link['href'].to_s
-            if @product.valid?
-              prod_url = sale_page.link_with(:href => product_link['href'].to_s)
-              prod = prod_url.click
-              product_name = prod.css('.product-view .product-shop .product-name .h1').text
-              product_url = product_link['href'].to_s
-              product_price = prod.css('.product-view .product-shop .price-info
-                                          .regular-price .price, .product-view
-                                          .product-shop .price-info
-                                          .special-price .price').text.gsub(/[,]/, '').to_i.to_s
-              product_sku = prod.css('.product-view .product-sku span').text
-              puts product_name + "\n" + product_url + "\n" + product_price + "\n" + product_sku
-              puts '--------------------'
-
-              @product = Product.create!(:name => product_name, :url => product_url,
-                                          :price => product_price, :sku => product_sku)
-              @relation = Relation.create!(product_id: @product.id, category_id: @cat_sale.id)
-            else
-              puts '=========' + @cat_sale.name + '=========='
-              @product_orig = Product.where(url: @product.url).first
-              @relation = Relation.find_or_create_by(product_id: @product_orig.id, category_id: @cat_sale.id)
-            end
-
-          end
-
-          break unless lien
-          sale_page = lien.click
-          puts "--- #{@cat_sale.name} --- page number #{page_number} ---"
-        end
-      end
-    end
-
-    sale
-
-    agent = Mechanize.new
-
-    @categories = Category.offset(1)
-    @categories.each do |c|
-      puts '---' + c.name + '---'
-      cat_url_en = c.url + '?___store=en'
-      page = agent.get(cat_url_en)
-
+      # Получаем страничку с товарами
+      page = agent.get(category_url)
       page_number = 1
-
       loop do
-        page_number += 1
-        lien = page.link_with(:text => page_number.to_s)
-
-        page.css('.cover_link').each do |product_link|
-
+        # На странице находим ссылки на товары
+        page.css(product_dom).each do |product_link|
           @product = Product.new
           @product.url = product_link['href'].to_s
+          # Если в базе нет товара с таким URL, выполняем следующии действия
           if @product.valid?
+            # Переходим на страницу товара
             prod = agent.get(product_link['href'])
-
             product_name = prod.css('.product-view .product-shop .product-name .h1').text
             product_url = product_link['href'].to_s
             product_price = prod.css('.product-view .product-shop .price-info
@@ -91,24 +30,63 @@ namespace :parser do
             product_sku = prod.css('.product-view .product-sku span').text
             puts product_name + "\n" + product_url + "\n" + product_price + "\n" + product_sku
             puts '--------------------'
-
             @product = Product.create!(:name => product_name, :url => product_url,
                                         :price => product_price, :sku => product_sku)
-            @relation = Relation.create!(product_id: @product.id, category_id: c.id)
-          else
-            puts '=========' + c.name + '=========='
-            @product_orig = Product.where(url: product_link['href'].to_s).first
-            puts 'product_orig ' + @product_orig.id.to_s
-            puts 'category ' + c.id.to_s
-            @relation = Relation.find_or_create_by(product_id: @product_orig.id, category_id: c.id)
+            # Делаем связь данного товара с данной категорией
+            @relation = Relation.create!(product_id: @product.id, category_id: category_id)
+          else      # Если такой товар уже есть в базе
+            puts '=========' + category_name + '=========='
+            @product_orig = Product.where(url: @product.url).first
+            # Делаем связь уже существующего в базе товара с данной категорией
+            @relation = Relation.find_or_create_by(product_id: @product_orig.id, category_id: category_id)
           end
-
         end
-
+        # Номер страницы на кнопке пагинации, после первой итерации переходим
+        # на страницу 2 и тд
+        page_number += 1
+        lien = page.link_with(:text => page_number.to_s)
+        # Если нет кнопки перехода на следующую страницу - выходим из цикла
         break unless lien
+        # Переходим на следующую страницу
         page = lien.click
-        puts "--- #{c.name} --- page number #{page_number} ---"
+        puts "--- #{category_name} --- page number #{page_number} ---"
       end
+    end
+
+    # Метод для парсинга товаров из категории sale
+    # Ее подкатегории имеют другой вид, в отличие от остальных подкатегорий
+    def sale
+      @cat_sale = Category.first
+      cat_url_en = @cat_sale.url + '?___store=en'
+
+      agent = Mechanize.new
+
+      page = agent.get(cat_url_en)
+
+      # Находим ссылки на подкатегории
+      page.css('.twoban a').each do |link|
+        full_link = 'https://www.tvdirect.tv' + link['href'].to_s
+        product_dom = '.products-grid .product-name a'
+
+        # Метод для парсинга товаров
+        pars_products(full_link, product_dom, @cat_sale.id, @cat_sale.name)
+
+      end
+    end
+
+    sale
+
+    # Далее переобходим остальные категории
+    agent = Mechanize.new
+
+    @categories = Category.offset(1)
+    @categories.each do |c|
+      puts '---' + c.name + '---'
+      cat_url_en = c.url + '?___store=en'
+      product_dom = '.cover_link'
+
+      pars_products(cat_url_en, product_dom, c.id, c.name)
+
     end
 
   end
@@ -118,12 +96,15 @@ namespace :parser do
     require 'open-uri'
     require 'nokogiri'
 
+    # Английская версия сайта
     url = 'https://www.tvdirect.tv/?___store=en&___from_store=th'
     html = open(url)
 
     doc = Nokogiri::HTML(html)
 
+    # Находим категории 1-го уровня
     links = doc.css('.nav-primary li.level0').each do |link1|
+      # Если категория имеет подкатегории, выполняем следующии действия
       if link1.to_s.include?('parent')
         link1_name = link1.at_css('a').text
         link1_url = link1.at_css('a')['href']
@@ -131,6 +112,7 @@ namespace :parser do
 
         @cat_level1 = Category.create!(:name => link1_name, :url => link1_url)
 
+        # Находим категории второго уровня
         link1.css('li.subcat li.level1').each do |link2|
           link2_name = link2.at_css('a').text
           link2_url = link2.at_css('a')['href']
@@ -140,6 +122,7 @@ namespace :parser do
 
           puts "-#{link2_name} (#{link2_url})"
 
+          # Находим категории третьего уровня
           link2.css('ul li').each do |link3|
             link3_name = link3.at_css('a').text
             link3_url = link3.at_css('a')['href']
@@ -153,6 +136,8 @@ namespace :parser do
         end
         puts "\n"
       else
+
+        # Если главная категория не имеет подкатегорий
         link1_name = link1.at_css('a').text
         link1_url = link1.at_css('a')['href']
 
