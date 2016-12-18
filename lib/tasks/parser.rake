@@ -2,9 +2,7 @@ namespace :parser do
 
   desc "Get products"
   task :get_products => :environment do
-    require 'mechanize'
-    require 'date'
-    require 'json'
+    require 'mechanize'    
 
     # Метод для перехода по страницам товара и кнопкам пагинации
     def pars_products(category_url, product_dom, category_id, category_name)
