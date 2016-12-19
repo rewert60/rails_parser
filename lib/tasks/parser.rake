@@ -2,7 +2,7 @@ namespace :parser do
 
   desc "Get products"
   task :get_products => :environment do
-    require 'mechanize'    
+    require 'mechanize'
 
     # Метод для перехода по страницам товара и кнопкам пагинации
     def pars_products(category_url, product_dom, category_id, category_name)
@@ -15,28 +15,32 @@ namespace :parser do
         page.css(product_dom).each do |product_link|
           @product = Product.new
           @product.url = product_link['href'].to_s
-          # Если в базе нет товара с таким URL, выполняем следующии действия
-          if @product.valid?
-            # Переходим на страницу товара
-            prod = agent.get(product_link['href'])
-            product_name = prod.css('.product-view .product-shop .product-name .h1').text
-            product_url = product_link['href'].to_s
-            product_price = prod.css('.product-view .product-shop .price-info
-                                        .regular-price .price, .product-view
-                                        .product-shop .price-info
-                                        .special-price .price').text.gsub(/[,]/, '').to_i.to_s
-            product_sku = prod.css('.product-view .product-sku span').text
-            puts product_name + "\n" + product_url + "\n" + product_price + "\n" + product_sku
-            puts '--------------------'
-            @product = Product.create!(:name => product_name, :url => product_url,
-                                        :price => product_price, :sku => product_sku)
-            # Делаем связь данного товара с данной категорией
-            @relation = Relation.create!(product_id: @product.id, category_id: category_id)
-          else      # Если такой товар уже есть в базе
-            puts '=========' + category_name + '=========='
-            @product_orig = Product.where(url: @product.url).first
-            # Делаем связь уже существующего в базе товара с данной категорией
-            @relation = Relation.find_or_create_by(product_id: @product_orig.id, category_id: category_id)
+          begin
+            # Если в базе нет товара с таким URL, выполняем следующии действия
+            if @product.valid?
+              # Переходим на страницу товара
+              prod = agent.get(product_link['href'])
+              product_name = prod.css('.product-view .product-shop .product-name .h1').text
+              product_url = product_link['href'].to_s
+              product_price = prod.css('.product-view .product-shop .price-info
+                                          .regular-price .price, .product-view
+                                          .product-shop .price-info
+                                          .special-price .price').text.gsub(/[,]/, '').to_i.to_s
+              product_sku = prod.css('.product-view .product-sku span').text
+              puts product_name + "\n" + product_url + "\n" + product_price + "\n" + product_sku
+              puts '--------------------'
+              @product = Product.create!(:name => product_name, :url => product_url,
+                                          :price => product_price, :sku => product_sku)
+              # Делаем связь данного товара с данной категорией
+              @relation = Relation.create!(product_id: @product.id, category_id: category_id)
+            else      # Если такой товар уже есть в базе
+              puts "Product already exist in db. Add relation with category '#{category_name}'"
+              @product_orig = Product.where(url: @product.url).first
+              # Делаем связь уже существующего в базе товара с данной категорией
+              @relation = Relation.find_or_create_by(product_id: @product_orig.id, category_id: category_id)
+            end
+          rescue
+            # На случай, когда нет страницы товара и получаем 404
           end
         end
         # Номер страницы на кнопке пагинации, после первой итерации переходим
